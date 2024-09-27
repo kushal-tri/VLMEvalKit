@@ -15,6 +15,7 @@ def parse_args():
     # Essential Args
     parser.add_argument('--data', type=str, nargs='+', required=True)
     parser.add_argument('--model', type=str, nargs='+', required=True)
+    parser.add_argument('--model_path', type=str, nargs='+', required=False, default=[None])
     # Args that only apply to Video Dataset
     parser.add_argument('--nframe', type=int, default=8)
     parser.add_argument('--pack', action='store_true')
@@ -61,9 +62,10 @@ def main():
     if world_size > 1:
         local_rank = os.environ.get('LOCAL_RANK', 0)
         torch.cuda.set_device(int(local_rank))
-        dist.init_process_group(backend='nccl', timeout=datetime.timedelta(seconds=10800))
+        if not dist.is_initialized():
+            dist.init_process_group(backend='nccl', timeout=datetime.timedelta(seconds=10800))
 
-    for _, model_name in enumerate(args.model):
+    for _, (model_name, model_path) in enumerate(zip(args.model, args.model_path)):
         model = None
 
         pred_root = osp.join(args.work_dir, model_name)
@@ -122,6 +124,7 @@ def main():
                         model,
                         work_dir=pred_root,
                         model_name=model_name,
+                        model_path=model_path,
                         dataset=dataset,
                         nframe=args.nframe,
                         pack=args.pack,
@@ -133,6 +136,7 @@ def main():
                         model,
                         work_dir=pred_root,
                         model_name=model_name,
+                        model_path=model_path,
                         dataset=dataset,
                         verbose=args.verbose,
                         api_nproc=args.nproc,
@@ -142,6 +146,7 @@ def main():
                         model,
                         work_dir=pred_root,
                         model_name=model_name,
+                        model_path=model_path,
                         dataset=dataset,
                         verbose=args.verbose,
                         api_nproc=args.nproc,

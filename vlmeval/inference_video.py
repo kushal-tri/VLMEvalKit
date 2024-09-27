@@ -46,7 +46,7 @@ def infer_data_api(work_dir, model_name, dataset, nframe=8, pack=False, samples_
     return res
 
 
-def infer_data(model_name, work_dir, dataset, out_file, nframe=8, pack=False, verbose=False, api_nproc=4):
+def infer_data(model_name, model_path, work_dir, dataset, out_file, nframe=8, pack=False, verbose=False, api_nproc=4):
     res = load(out_file) if osp.exists(out_file) else {}
     rank, world_size = get_rank_and_world_size()
     dataset_name = dataset.dataset_name
@@ -60,7 +60,10 @@ def infer_data(model_name, work_dir, dataset, out_file, nframe=8, pack=False, ve
         return model_name
     sample_indices_subrem = [x for x in sample_indices_sub if x not in res]
 
-    model = supported_VLM[model_name]() if isinstance(model_name, str) else model_name
+    if model_path is None:
+        model = supported_VLM[model_name]() if isinstance(model_name, str) else model_name
+    else:
+        model = supported_VLM[model_name](model_path) if isinstance(model_name, str) else model_name
 
     is_api = getattr(model, 'is_api', False)
     if is_api:
@@ -115,6 +118,7 @@ def infer_data_job_video(
         model,
         work_dir,
         model_name,
+        model_path,
         dataset,
         nframe=8,
         pack=False,
@@ -142,6 +146,7 @@ def infer_data_job_video(
 
     model = infer_data(
         model,
+        model_path,
         work_dir=work_dir,
         dataset=dataset,
         nframe=nframe,
