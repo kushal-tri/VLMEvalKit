@@ -8,11 +8,6 @@ from prismatic import load
 
 
 class Prismatic(BaseModel):
-    INSTALL_REQ = True
-    INTERLEAVE = True
-
-    DEFAULT_IMAGE_TOKEN = '<image>'
-    IMAGE_TOKEN_INDEX = -200
 
     def __init__(self, model_path, **kwargs):
       self.model = load(model_path, **kwargs)
