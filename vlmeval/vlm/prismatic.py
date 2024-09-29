@@ -26,7 +26,7 @@ class Prismatic(BaseModel):
           else:
               images.append(Image.open(msg['value']).convert('RGB'))
       
-      self.model.generate(
+      return self.model.generate(
         images[0], 
         content,
         do_sample=False, 

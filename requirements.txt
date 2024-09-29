@@ -29,3 +29,5 @@ transformers
 typing_extensions
 validators
 xlsxwriter
+torchvision
+einops
