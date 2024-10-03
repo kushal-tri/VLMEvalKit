@@ -49,3 +49,4 @@ from .slime import SliME
 from .mplug_owl3 import mPLUG_Owl3
 from .pixtral import Pixtral
 from .prismatic import Prismatic
+from .llama_vision import llama_vision
