@@ -136,7 +136,7 @@ def infer_data(model_name, model_path, work_dir, dataset, out_file, verbose=Fals
             print(response, flush=True)
 
         res[idx] = response
-        if (i + 1) % 20 == 0:
+        if (i + 1) % 10 == 0:
             dump(res, out_file)
 
     res = {k: res[k] for k in data_indices}
