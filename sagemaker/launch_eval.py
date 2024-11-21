@@ -11,7 +11,6 @@ import draccus
 import sagemaker
 from sagemaker.pytorch import PyTorch
 
-
 NAME = "vlmevalkit"
 INSTANCE_MAPPER = {
     "p4": "ml.p4d.24xlarge",
@@ -154,7 +153,14 @@ def main(args: LaunchConfig):
     folder_name, filename = splits[-2], splits[-1]
 
     output_root = f"{args.s3_remote_sync}/sagemaker/{args.user}/{NAME}/"
-    output_s3 = os.path.join(output_root, folder_name, filename, job_name)    
+    output_s3 = os.path.join(output_root, folder_name, filename, job_name)
+
+    # Compute Batch Size Parameters
+    world_size = args.instance_count * 8
+    if args.per_device_batch_size is None:
+        args.per_device_batch_size = args.global_batch_size // world_size
+    assert args.global_batch_size % world_size == 0, f"World Size `{world_size}` does not divide global batch size!"
+    
 
     hyperparameters = {
         "model": args.model,
