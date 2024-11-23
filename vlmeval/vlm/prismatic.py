@@ -1,5 +1,7 @@
 import torch
 from PIL import Image
+
+from vlmeval.dataset.image_caption import ImageCaptionDataset
 from .base import BaseModel
 from ..smp import *
 import copy
@@ -16,11 +18,13 @@ class Prismatic(BaseModel):
     def build_prompt(self, line, dataset):
       if dataset == "COCO_VAL":
         line.question == "Provide a short image description.<|/h|>"
-      return super().build_prompt(line, dataset)
+      return ImageCaptionDataset(dataset).build_prompt(line)
       
 
     def use_custom_prompt(self, dataset):
-       return True # super().use_custom_prompt(dataset)
+      if dataset == "COCO_VAL":
+        return True # super().use_custom_prompt(dataset)
+      return False
   
 
     def generate_inner(self, message, dataset=None):
