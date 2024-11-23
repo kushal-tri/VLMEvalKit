@@ -13,6 +13,16 @@ class Prismatic(BaseModel):
       self.model = load(model_path, **kwargs)
       self.model.cuda().eval()
 
+    def build_prompt(self, line, dataset):
+      if dataset == "COCO_VAL":
+        line.question == "Provide a short image description.<|/h|>"
+      return super().build_prompt(line, dataset)
+      
+
+    def use_custom_prompt(self, dataset):
+       return True # super().use_custom_prompt(dataset)
+  
+
     def generate_inner(self, message, dataset=None):
       content, images = '', []
       for msg in message:
