@@ -14,11 +14,17 @@ class Prismatic(BaseModel):
     def __init__(self, model_path, **kwargs):
       self.model = load(model_path, **kwargs)
       self.model.cuda().eval()
+      self.img_cap_obj = None
+    def __get_image_cap_obj(self, dataset):
+      assert dataset == "COCO_VAL"
+      if self.img_cap_obj is None:
+        self.img_cap_obj = ImageCaptionDataset(dataset)
+      return self.img_cap_obj 
 
     def build_prompt(self, line, dataset):
       if dataset == "COCO_VAL":
         line.question == "Provide a short image description.<|/h|>"
-      return ImageCaptionDataset(dataset).build_prompt(line)
+      return self.__get_image_cap_obj(dataset).build_prompt(line)
       
 
     def use_custom_prompt(self, dataset):
