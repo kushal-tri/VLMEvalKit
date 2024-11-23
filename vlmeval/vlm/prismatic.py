@@ -23,7 +23,7 @@ class Prismatic(BaseModel):
 
     def build_prompt(self, line, dataset):
       if dataset == "COCO_VAL":
-        line.question == "Provide a short image description.<|/h|>"
+        line.question = "Provide a short image description."
       return self.__get_image_cap_obj(dataset).build_prompt(line)
       
 
