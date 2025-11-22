@@ -1,5 +1,6 @@
 import json
 import pickle
+import warnings
 import pandas as pd
 import os
 import csv
@@ -47,7 +48,7 @@ def localize_df(data, dname, nproc=32):
     else:
         img_paths = []
         for i in indices_str:
-            if len(image_map[i]) <= 64:
+            if len(image_map[i]) <= 64 and isinstance(image_map[i], str):
                 idx = image_map[i]
                 assert idx in image_map and len(image_map[idx]) > 64
                 img_paths.append(f'{idx}.jpg')
@@ -115,9 +116,9 @@ def MMBenchOfficialServer(dataset_name):
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                            np.int16, np.int32, np.int64, np.uint8,
-                            np.uint16, np.uint32, np.uint64)):
+        if isinstance(obj,
+                      (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64,
+                       np.uint8, np.uint16, np.uint32, np.uint64)):
             return int(obj)
         elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
             return float(obj)
@@ -138,6 +139,10 @@ def dump(data, f, **kwargs):
         pickle.dump(data, open(pth, 'wb'))
 
     def dump_json(data, pth, **kwargs):
+        # 处理 DataFrame 对象
+        if isinstance(data, pd.DataFrame):
+            # 转换为 records 格式（列表格式）
+            data = data.to_dict('records')
         json.dump(data, open(pth, 'w'), indent=4, ensure_ascii=False, cls=NumpyEncoder)
 
     def dump_jsonl(data, f, **kwargs):
@@ -157,6 +162,69 @@ def dump(data, f, **kwargs):
     handlers = dict(pkl=dump_pkl, json=dump_json, jsonl=dump_jsonl, xlsx=dump_xlsx, csv=dump_csv, tsv=dump_tsv)
     suffix = f.split('.')[-1]
     return handlers[suffix](data, f, **kwargs)
+
+
+def get_pred_file_format():
+    pred_format = os.getenv('PRED_FORMAT', '').lower()
+    if pred_format == '':
+        return 'xlsx'  # default format
+    else:
+        assert pred_format in ['tsv', 'xlsx', 'json'], f'Unsupported PRED_FORMAT {pred_format}'
+        return pred_format
+
+
+def get_eval_file_format():
+    eval_format = os.getenv('EVAL_FORMAT', '').lower()
+    if eval_format == '':
+        return 'csv'  # default format
+    else:
+        assert eval_format in ['csv', 'json'], f'Unsupported EVAL_FORMAT {eval_format}'
+        return eval_format
+
+
+def get_pred_file_path(work_dir, model_name, dataset_name, use_env_format=True):
+    if use_env_format:
+        file_format = get_pred_file_format()
+        if file_format == 'xlsx':
+            return osp.join(work_dir, f'{model_name}_{dataset_name}.xlsx')
+        elif file_format == 'tsv':
+            return osp.join(work_dir, f'{model_name}_{dataset_name}.tsv')
+        elif file_format == 'json':
+            return osp.join(work_dir, f'{model_name}_{dataset_name}.json')
+    else:
+        # default
+        return osp.join(work_dir, f'{model_name}_{dataset_name}.xlsx')
+
+
+def get_eval_file_path(eval_file, judge_model, use_env_format=True):
+    suffix = eval_file.split('.')[-1]
+    if use_env_format:
+        file_format = get_eval_file_format()
+        if file_format == 'csv':
+            return eval_file.replace(f'.{suffix}', f'_{judge_model}.csv')
+        elif file_format == 'json':
+            return eval_file.replace(f'.{suffix}', f'_{judge_model}.json')
+    else:
+        # default
+        return eval_file.replace(f'.{suffix}', f'_{judge_model}.xlsx')
+
+
+def _should_convert_to_dataframe(data):
+    if not isinstance(data, dict):
+        return False
+    if not data:
+        return False
+    if 'columns' in data and 'data' in data:
+        return True
+    values = list(data.values())
+    if all(not isinstance(v, (list, dict)) for v in values):
+        return False
+    if any(isinstance(v, list) for v in values):
+        lists = [v for v in values if isinstance(v, list)]
+        if lists and all(len(lst) == len(lists[0]) for lst in lists):
+            return True
+
+    return False
 
 
 def load(f, fmt=None):
@@ -182,6 +250,13 @@ def load(f, fmt=None):
 
     def load_tsv(f):
         return pd.read_csv(f, sep='\t')
+
+    import validators
+    if validators.url(f):
+        tgt = osp.join(LMUDataRoot(), 'files', osp.basename(f))
+        if not osp.exists(tgt):
+            download_file(f, tgt)
+        f = tgt
 
     handlers = dict(pkl=load_pkl, json=load_json, jsonl=load_jsonl, xlsx=load_xlsx, csv=load_csv, tsv=load_tsv)
     if fmt is not None:
@@ -298,6 +373,9 @@ def parse_file(s):
     if osp.exists(s) and s != '.':
         assert osp.isfile(s)
         suffix = osp.splitext(s)[1].lower()
+        # 添加对webp的支持
+        if suffix == '.webp':
+            return ('image/webp', s)
         mime = mimetypes.types_map.get(suffix, 'unknown')
         return (mime, s)
     elif s.startswith('data:image/'):
@@ -314,7 +392,10 @@ def parse_file(s):
         return parse_file(tgt)
     elif validators.url(s):
         suffix = osp.splitext(s)[1].lower()
-        if suffix in mimetypes.types_map:
+        # 添加对webp的支持
+        if suffix == '.webp':
+            mime = 'image/webp'
+        elif suffix in mimetypes.types_map:
             mime = mimetypes.types_map[suffix]
             dname = osp.join(LMUDataRoot(), 'files')
             os.makedirs(dname, exist_ok=True)
@@ -323,6 +404,7 @@ def parse_file(s):
             return (mime, tgt)
         else:
             return ('url', s)
+
     else:
         return (None, s)
 
@@ -342,3 +424,101 @@ def parquet_to_tsv(file_path):
     pth = '/'.join(file_path.split('/')[:-1])
     data_name = file_path.split('/')[-1].split('.')[0]
     data.to_csv(osp.join(pth, f'{data_name}.tsv'), sep='\t', index=False)
+
+
+def fetch_aux_files(eval_file):
+    file_root = osp.dirname(eval_file)
+    file_name = osp.basename(eval_file)
+
+    eval_id = osp.basename(file_root)
+    if eval_id[:3] == 'T20' and eval_id[9:11] == '_G':
+        model_name = osp.basename(osp.dirname(file_root))
+    else:
+        model_name = eval_id
+
+    dataset_name = osp.splitext(file_name)[0][len(model_name) + 1:]
+    from vlmeval.dataset import SUPPORTED_DATASETS
+    to_handle = []
+    for d in SUPPORTED_DATASETS:
+        if d.startswith(dataset_name) and d != dataset_name:
+            to_handle.append(d)
+    fs = ls(file_root, match=f'{model_name}_{dataset_name}')
+    if len(to_handle):
+        for d in to_handle:
+            fs = [x for x in fs if d not in x]
+    return fs
+
+
+def get_file_extension(file_path):
+    return file_path.split('.')[-1]
+
+
+def get_intermediate_file_path(eval_file, suffix, target_format=None):
+    original_ext = get_file_extension(eval_file)
+
+    if target_format is None:
+        if suffix in ['_tmp', '_response', '_processed']:
+            target_format = 'pkl'
+        elif suffix in ['_rating', '_config', '_meta']:
+            target_format = 'json'
+        elif suffix in ['_acc', '_fine', '_metrics']:
+            target_format = get_eval_file_format()
+        else:
+            target_format = get_pred_file_format()
+
+    return eval_file.replace(f'.{original_ext}', f'{suffix}.{target_format}')
+
+
+def prepare_reuse_files(pred_root_meta, eval_id, model_name, dataset_name, reuse, reuse_aux):
+    import shutil
+    from .misc import timestr
+    work_dir = osp.join(pred_root_meta, eval_id)
+    os.makedirs(work_dir, exist_ok=True)
+    if not reuse:
+        files = ls(work_dir, match=f'{model_name}_{dataset_name}')
+        if len(files):
+            t_str = timestr('second')
+            bak_dir = osp.join(work_dir, f'bak_{t_str}_{dataset_name}')
+            os.makedirs(bak_dir, exist_ok=True)
+            for f in files:
+                shutil.move(f, bak_dir)
+            warnings.warn(
+                f'--reuse flag not set but history records detected in {work_dir}. '
+                f'Those files are moved to {bak_dir} for backup. '
+            )
+            return
+    # reuse flag is set
+    prev_pred_roots = ls(pred_root_meta, mode='dir')
+    prev_pred_roots.sort()
+    prev_pred_roots.remove(work_dir)
+
+    files = ls(work_dir, match=f'{model_name}_{dataset_name}.')
+    prev_file = None
+    prev_aux_files = None
+    if len(files):
+        pass
+    else:
+        for root in prev_pred_roots[::-1]:
+            fs = ls(root, match=f'{model_name}_{dataset_name}.')
+            if len(fs):
+                if len(fs) > 1:
+                    warnings.warn(f'Multiple candidates in {root}: {fs}. Will use {fs[0]}')
+                prev_file = fs[0]
+                prev_aux_files = fetch_aux_files(prev_file)
+                break
+        if prev_file is not None:
+            warnings.warn(f'--reuse is set, will reuse prediction file {prev_file}')
+            os.system(f'cp {prev_file} {work_dir}')
+
+    if not reuse_aux:
+        warnings.warn(f'--reuse-aux is not set, all auxiliary files in {work_dir} are removed. ')
+        os.system(f'rm -rf {osp.join(work_dir, f"{model_name}_{dataset_name}_*openai*")}')
+        os.system(f'rm -rf {osp.join(work_dir, f"{model_name}_{dataset_name}_*csv")}')
+        os.system(f'rm -rf {osp.join(work_dir, f"{model_name}_{dataset_name}_*json")}')
+        os.system(f'rm -rf {osp.join(work_dir, f"{model_name}_{dataset_name}_*pkl")}')
+        os.system(f'rm -rf {osp.join(work_dir, f"{model_name}_{dataset_name}_*gpt*")}')
+    elif prev_aux_files is not None:
+        for f in prev_aux_files:
+            os.system(f'cp {f} {work_dir}')
+            warnings.warn(f'--reuse-aux is set, will reuse auxiliary file {f}')
+    return

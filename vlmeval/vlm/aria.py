@@ -1,5 +1,4 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoProcessor
 import warnings
 import copy as cp
 from PIL import Image
@@ -17,6 +16,7 @@ class Aria(BaseModel):
     INTERLEAVE = True
 
     def __init__(self, model_path='rhymes-ai/Aria', **kwargs):
+        from transformers import AutoModelForCausalLM, AutoProcessor
         assert model_path is not None
         self.model_path = model_path
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
@@ -50,8 +50,8 @@ class Aria(BaseModel):
 
     def use_custom_prompt(self, dataset):
         assert dataset is not None
-        if listinstr(['MMDU', 'MME-RealWorld', 'MME-RealWorld-CN'], dataset):
-            # For Multi-Turn we don't have custom prompt
+        if listinstr(['MMDU', 'MME-RealWorld', 'MME-RealWorld-CN', 'ChartQAPro', 'ChartMuseum'], dataset):  # noqa: E501
+            # For Multi-Turn and some special datasets we don't have custom prompt
             return False
         if DATASET_MODALITY(dataset) == 'VIDEO':
             # For Video benchmarks we don't have custom prompt at here

@@ -23,9 +23,9 @@ def get_dimension_rating(data_path):
     for key, value in result_board.items():
         correct += value[0]
         total += value[1]
-        result_board[key].append(f'{value[0] / value[1] * 100 :.2f}%')
+        result_board[key].append(f'{value[0] / value[1] * 100:.2f}%')
 
-    result_board['overall'] = [correct, total, f'{correct / total * 100 :.2f}%']
+    result_board['overall'] = [correct, total, f'{correct / total * 100:.2f}%']
 
     return result_board
 
@@ -33,9 +33,9 @@ def get_dimension_rating(data_path):
 def check_ans(pred, gt):
     flag = False
 
-    pred_list = pred.lower().split(' ')
+    pred_list = pred.lower().strip().split(' ')
     pred_option, _ = pred_list[0], ' '.join(pred_list[1:])
-    gt_list = gt.lower().split(' ')
+    gt_list = gt.lower().strip().split(' ')
     gt_option, gt_content = gt_list[0], ' '.join(gt_list[1:])
     if gt_content[-1] == '.':
         gt_content = gt_content[:-1]
@@ -51,9 +51,9 @@ def check_ans(pred, gt):
 def check_ans_with_model(pred, gt, model, item, dataset_name='MVBench'):
     flag = False
 
-    pred_list = pred.lower().split(' ')
+    pred_list = pred.lower().strip().split(' ')
     pred_option, _ = pred_list[0], ' '.join(pred_list[1:])
-    gt_list = gt.lower().split(' ')
+    gt_list = gt.lower().strip().split(' ')
     gt_option, gt_content = gt_list[0], ' '.join(gt_list[1:])
     if gt_content[-1] == '.':
         gt_content = gt_content[:-1]
@@ -83,9 +83,9 @@ def check_ans_advanced(pred, gt):
     }
     flag = False
 
-    pred_list = pred.lower().split(' ')
+    pred_list = pred.lower().strip().split(' ')
     pred_option, _ = pred_list[0], ' '.join(pred_list[1:])
-    gt_list = gt.lower().split(' ')
+    gt_list = gt.lower().strip().split(' ')
     gt_option, gt_content = gt_list[0], ' '.join(gt_list[1:])
     if gt_content[-1] == '.':
         gt_content = gt_content[:-1]

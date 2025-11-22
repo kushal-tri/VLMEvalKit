@@ -1,14 +1,180 @@
 import re
 import json
 from math import isclose
-import sympy as sp
-from sympy import simplify, Eq, sympify, evalf, Pow
-from sympy.parsing.latex import parse_latex
-import antlr4
 from decimal import Decimal, getcontext
 from fractions import Fraction
 import sys
 import math
+import timeout_decorator
+import logging
+from ...smp import *
+
+try:
+    import sympy as sp
+    from sympy import simplify, Eq, sympify, evalf, Pow
+    from sympy.parsing.latex import parse_latex
+    import antlr4
+except ImportError:
+    logging.warning('sympy or antlr4 is not installed, please install it for OlympiadBench evaluation.')
+
+FAIL_MSG = 'Failed to obtain answer via API.'
+
+
+def get_gpt4_extract_ICE():
+    example_1 = """
+1.
+Model response: 'Rounded to two decimal places, the perimeter of the sector is approximately:\n\n(-2, 1)'
+Extracted Answer: (-2, 1)
+""" # noqa
+
+    example_2 = """
+2.
+Model response: 'at those points.\n\nTherefore, the correct option that represents the meaning of the intersection points of the graphs is:\n\nD. They give the solutions to the equation $f(t)=g(t)$.",'
+Extracted Answer: D
+""" # noqa
+
+    example_3 = """
+3.
+Model response: ' at 1 (there's a closed circle at y = 1), the range in interval notation is \\((-4, 1]\\).\n\nFinal values:\nDomain: \\((-3, 3]\\)\nRange: \\((-4, 1]\\)'
+Extracted Answer: Domain: \\((-3, 3]\\)\nRange: \\((-4, 1]\\)
+""" # noqa
+
+    example_4 = """
+4.
+Model response: 'As it stands, I cannot provide the correct option letter because there isn't enough information to solve for 'y'.'
+Extracted Answer: null
+""" # noqa
+
+    example_5 = """
+5.
+Model response: 'Given that AB = 17.6 meters, we can now substitute into the equation:\n\nd = 17.6 / cos(38\u00b0)\n\nTherefore, to one decimal place, the distance d between Ned and Bart is approximately 22.3 meters.'
+Extracted answer: 22.3
+""" # noqa
+
+    example_6 = """
+6.
+Model response:  have all the coefficients for the quadratic function:\n\\( f(x) = ax^2 + bx + c \\)\n\\( f(x) = -1x^2 - 2x + 1 \\)\n\nTherefore, the equation for the graphed function \\( f \\) is:\n\\( f(x) = -x^2 - 2x + 1 \\)"'
+Extracted answer: f(x) = -x^2 - 2x + 1
+""" # noqa
+
+    return [example_1, example_2, example_3, example_4, example_5, example_6]
+
+
+def get_gpt4_score_ICE():
+    example_1 = """
+[Question]: Write the set of numbers represented on the number line in interval notation.
+[Standard Answer]: (-2,1]
+[Model_answer] : Extracted Answer: \\((-2, 1)\\)
+Judgement: 0
+""" # noqa
+
+    example_2 = """
+[Question]: As shown in the figure, circle O has a radius 1.0, if angle BAC = 60.0, then the length of BC is ()\nChoices:\nA:2\nB:2\u221a{{3}}\nC:\u221a{{3}}\nD:2\u221a{{2}}
+[Standard Answer]: C
+[Model_answer] : B:2\u221a{{3}}
+Judgement: 0
+""" # noqa
+
+    example_3 = """
+[Question]: Find the domain and range of the function f using interval notation.
+[Standard Answer]: domain: [-4, 0) and range: (-3, 1]
+[Model_answer] : Range: \\((-4, 1]\\)
+Judgement: 0
+""" # noqa
+
+    example_4 = """
+[Question]: As shown in the figure, circle O has a radius 1.0, if angle BAC = 60.0, then the length of BC is ()\nChoices:\nA:2\nB:2\u221a{{3}}\nC:\u221a{{3}}\nD:2\u221a{{2}}
+[Standard Answer]: C
+[Model_answer] : null
+Judgement: 0
+""" # noqa
+
+    return [example_1, example_2, example_3, example_4]
+
+
+def build_olympiad_gpt4_extract_prompt(line):
+    task_description = """
+I am providing you a response from a model to a math problem, termed 'Model Response'. You should extract the answer from the response as 'Extracted Answer'. Directly output the extracted answer with no explanation.\n\n
+""" # noqa
+    prediction = str(line['prediction'])
+    demo_prompt = task_description
+    examples = get_gpt4_extract_ICE()
+    for example in examples:
+        demo_prompt += example + '\n\n'
+    test_prompt = f"Model response: '{prediction}'\nExtracted Answer: "
+    full_prompt = f'{demo_prompt}7.\n{test_prompt}'
+
+    return full_prompt
+
+
+def build_olympiad_gpt4_score_prompt(line):
+    task_description = """
+Below are two answers to a math or a physics question. Question is [Question], [Standard Answer] is the standard answer to the question, and [Model_answer] is the answer extracted from a model's output to this question.  Determine whether these two answers are consistent.
+Please note that only when the [Model_answer] completely matches the [Standard Answer] means they are consistent. For non-multiple-choice questions, if the meaning is expressed in the same way, it is also considered consistent, for example, 0.5m and 50cm.
+If they are consistent, Judement is 1; if they are different, Judement is 0.\n\n
+""" # noqa
+    question_for_eval = line['question']
+    extract = line['extract']
+    answer = line['final_answer']
+    demo_prompt = task_description
+    examples = get_gpt4_score_ICE()
+    for example in examples:
+        demo_prompt += example + '\n\n'
+    test_prompt = f"""
+    [Question]: {question_for_eval}
+    [Standard Answer]: {answer}
+    [Model_answer] : {extract}
+    Judgement:"""
+    full_prompt = f'{demo_prompt}{test_prompt}'
+
+    return full_prompt
+
+
+def post_check_score(line, prefetch=False):
+    ans = str(line['final_answer']).strip()
+    response = str(line['extract']).strip()
+
+    if response == ans:
+        return response if prefetch else True
+    else:
+        return False
+
+
+def Olympiad_auxeval_extract(model, line):
+    prompt = build_olympiad_gpt4_extract_prompt(line)
+    log = ''
+    retry = 5
+    for i in range(retry):
+        prediction = line['prediction']
+        res = model.generate(prompt, temperature=i * 0.5)
+
+        if FAIL_MSG in res:
+            log += f'Try {i}: output is {prediction}, failed to parse.\n'
+        else:
+            log += 'Succeed'
+            return dict(log_extract=log, extract=res)
+    log += 'All 5 retries failed.\n'
+    return dict(log_extract=log, extract='')
+
+
+def Olympiad_auxeval_score(model, line):
+    prompt = build_olympiad_gpt4_score_prompt(line)
+    log = ''
+    retry = 5
+    if post_check_score(line, prefetch=True):
+        res = post_check_score(line, prefetch=True)
+        return dict(log_score='Prefetch succeed', score=True)
+    for i in range(retry):
+        prediction = line['prediction']
+        res = model.generate(prompt, temperature=i * 0.5)
+
+        if FAIL_MSG in res or res.strip() not in ['0', '1']:
+            log += f'Try {i}: output is {prediction}, res is {res}, failed to parse.\n'
+        else:
+            log += 'Succeed'
+            return dict(log_score=log, score=int(res) == 1)
+    log += 'All 5 retries failed.\n'
+    return dict(log_score=log, score=False)
 
 
 chinese_answer_type_dict = {
@@ -175,11 +341,15 @@ class MathJudger:
             # print(self.precision)
 
             for item2 in temp_list2:
-                if self.is_equal(item1, item2):
-                    temp_list1.remove(item1)
-                    temp_list2.remove(item2)
-                    precision.remove(self.precision)
-                    break
+                try:
+                    if self.is_equal(item1, item2):
+                        temp_list1.remove(item1)
+                        temp_list2.remove(item2)
+                        precision.remove(self.precision)
+                        break
+                except Exception as err:
+                    logging.warning(f'{type(err)}: {err}')
+                    continue
             else:
                 # If we didn't break from the inner loop, it means no match was found
                 return False
@@ -195,84 +365,7 @@ class MathJudger:
     #     return expression_sympy.subs(self.pi, math.pi)
 
     # 默认第一个表达式是 ground_truth
-    def is_equal(self, expression1, expression2):
-        if expression1 == expression2 and expression1 != "" and expression2 != "":
-            # print("原生等价")
-            return True
-
-        # 先判断是否是两个区间，是的话进行判断相等，不相等则返回 False
-        if self.is_interval(expression1) and self.is_interval(expression2):
-            try:
-                if self.interval_equal(expression1, expression2):
-                    # print("区间等价")
-                    return True
-            except:
-                return False
-
-        # 再判断是否在数值上相等
-        try:
-            if self.numerical_equal(expression1, expression2):
-                # print("数值等价")
-                return True
-        except:
-            pass
-
-        # 再判断是否是表达式相等
-        try:
-            if self.expression_equal(expression1, expression2) and not ("=" in expression1 and "=" in expression2):
-                # print("表达式等价")
-                return True
-        except:
-            pass
-
-        # 再判断是否是等式相等
-        try:
-            if self.equation_equal(expression1, expression2):
-                # print("等式等价")
-                return True
-        except:
-            pass
-
-        return False
-
-    # 判断两个数值在误差允许范围内是否相等
-    def numerical_equal(self, expression1: str, expression2: str, include_percentage: bool = True):
-        """
-        (默认 expression1 为 Ground_Truth)
-        函数: 判读两个数值是否在误差允许范围内相等
-        步骤1: 将可能出现的百分号的情况包含进来
-        步骤2: 使用 math.isclose 函数判断是否相等
-        """
-        reference = float(expression1)
-        prediction = float(expression2)
-
-        if include_percentage:
-            gt_result = [reference / 100, reference, reference * 100]
-        else:
-            gt_result = [reference]
-
-        for item in gt_result:
-            # if isclose(item, prediction, abs_tol=self.precision, rel_tol=0):
-            if abs(item - prediction) <= self.precision * 1.01:
-                return True
-        return False
-
-    def expression_equal(self, exp1, exp2):
-        """
-        (默认 expression1 为 Ground_Truth)
-        函数: 判断两个表达式是否在数学意义上等价
-        步骤1: 提取表达式, 防止有的模型会给出"x=1"而不是"1"
-        步骤2: 使用 sympy 库进行等价判断
-        """
-
-        # 只提取等号右边的表达式，一般左边是所求的量
-        def extract_expression(expression):
-            if "=" in expression:
-                expression = expression.split("=")[1]
-            return expression.strip()
-
-        exp1 = extract_expression(exp1)
-        exp2 = extract_expression(exp2)
+        exp_too_long = len(exp1) > 300 or len(exp2) > 300
 
         # 将表达式转换为 sympy 中能够进行处理的格式
         expr1_sym = sympify(parse_latex(exp1))
@@ -296,13 +389,9 @@ class MathJudger:
                             f"\"{str(expr1_sym)}\" and \"{str(expr2_sym)}\""
                         )
                         return False
-
-                    if abs(expr1_sym.evalf() - expr2_sym.evalf()) <= self.precision * 1.01:
-                        return True
-                    else:
-                        return False
-                except:
-                    return False
+            elif exp_too_long:
+                print(f'Expression {exp1} or {exp2} is too long to compute. ')
+                return False
             else:
                 try:
                     simplified_expr = simplify(expr1_sym - expr2_sym)

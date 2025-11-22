@@ -1,5 +1,6 @@
 from huggingface_hub import snapshot_download
 from ..smp import *
+from ..smp.file import get_intermediate_file_path, get_file_extension
 from .video_base import VideoBaseDataset
 from .utils import build_judge, DEBUG_MESSAGE
 from ..utils import track_progress_rich
@@ -59,8 +60,8 @@ Please directly reply with your response to the only question.
 
     TYPE = 'Video-VQA'
 
-    def __init__(self, dataset='MMBench-Video', pack=False):
-        super().__init__(dataset=dataset, pack=pack)
+    def __init__(self, dataset='MMBench-Video', pack=False, nframe=0, fps=-1):
+        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
 
     @classmethod
     def supported_datasets(cls):
@@ -81,14 +82,18 @@ Please directly reply with your response to the only question.
         if cache_path is not None and check_integrity(cache_path):
             dataset_path = cache_path
         else:
-            dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
+            if modelscope_flag_set():
+                from modelscope import dataset_snapshot_download
+                dataset_path = dataset_snapshot_download(dataset_id=repo_id)
+            else:
+                dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
             unwrap_hf_pkl(dataset_path)
         self.video_path = osp.join(dataset_path, 'video/')
         data_file = osp.join(dataset_path, f'{dataset_name}.tsv')
 
         return dict(data_file=data_file, root=osp.join(dataset_path, 'video'))
 
-    def build_prompt_pack(self, line, num_frames, fps=-1):
+    def build_prompt_pack(self, line):
         if isinstance(line, int):
             assert line < len(self)
             video = self.videos[line]
@@ -97,7 +102,7 @@ Please directly reply with your response to the only question.
         elif isinstance(line, str):
             video = line
 
-        frames = self.save_video_frames(video, num_frames, fps)
+        frames = self.save_video_frames(video)
         sub = self.data[self.data['video'] == video]
         sys_prompt = self.SYS + self.FRAMES_TMPL_PACK.format(len(frames))
         message = [dict(type='text', value=sys_prompt)]
@@ -110,7 +115,7 @@ Please directly reply with your response to the only question.
         message.append(dict(type='text', value=prompt))
         return message
 
-    def build_prompt_nopack(self, line, num_frames, video_llm, fps):
+    def build_prompt_nopack(self, line, video_llm):
         if isinstance(line, int):
             assert line < len(self)
             line = self.data.iloc[line]
@@ -121,7 +126,7 @@ Please directly reply with your response to the only question.
             message.append(dict(type='video', value=os.path.join(self.video_path, video_idx_path)))
             return message
         else:
-            frames = self.save_video_frames(line['video'], num_frames, fps)
+            frames = self.save_video_frames(line['video'])
             sys_prompt = self.FRAMES_TMPL_NOPACK.format(len(frames))
             message = [dict(type='text', value=sys_prompt)]
             for im in frames:
@@ -130,11 +135,11 @@ Please directly reply with your response to the only question.
             message.append(dict(type='text', value=prompt))
         return message
 
-    def build_prompt(self, line, num_frames, video_llm, fps):
+    def build_prompt(self, line, video_llm):
         if self.pack and not video_llm:
-            return self.build_prompt_pack(line, num_frames, fps)
+            return self.build_prompt_pack(line)
         else:
-            return self.build_prompt_nopack(line, num_frames, video_llm, fps)
+            return self.build_prompt_nopack(line, video_llm)
 
     @staticmethod
     def remove_side_quote(s, syms=[',', '"', "'"]):
@@ -204,13 +209,13 @@ Please directly reply with your response to the only question.
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.mmbench_video import get_dimension_rating, system_prompt, build_prompt
 
-        assert eval_file.endswith('.xlsx'), 'data file should be an xlsx file'
+        assert get_file_extension(eval_file) in ['xlsx', 'json', 'tsv'], 'data file should be an supported format (xlsx/json/tsv) file'  # noqa: E501
         judge = judge_kwargs['model']
         nproc = judge_kwargs.pop('nproc', 4)
 
-        tmp_file = eval_file.replace('.xlsx', f'_{judge}_tmp.pkl')
-        tgt_file = eval_file.replace('.xlsx', f'_{judge}_rating.json')
-        score_file = eval_file.replace('.xlsx', f'_{judge}_score.xlsx')
+        tmp_file = get_intermediate_file_path(eval_file, f'_{judge}_tmp', 'pkl')
+        tgt_file = get_intermediate_file_path(eval_file, f'_{judge}_rating', 'json')
+        score_file = get_intermediate_file_path(eval_file, f'_{judge}_score')
 
         model = build_judge(system_prompt=system_prompt, **judge_kwargs)
         assert model.working(), 'MMBench-Video evaluation requires a working OPENAI API\n' + DEBUG_MESSAGE

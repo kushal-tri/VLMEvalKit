@@ -74,7 +74,7 @@ def infer_data_api(model, work_dir, model_name, dataset, index_set=None, api_npr
     return res
 
 
-def infer_data(model, model_name, model_path, work_dir, dataset, out_file, verbose=False, api_nproc=4):
+def infer_data(model, model_name, work_dir, dataset, out_file, verbose=False, api_nproc=4, use_vllm=False):
     dataset_name = dataset.dataset_name
     res = {}
     if osp.exists(out_file):
@@ -95,16 +95,28 @@ def infer_data(model, model_name, model_path, work_dir, dataset, out_file, verbo
     if all_finished:
         res = {k: res[k] for k in data_indices}
         dump(res, out_file)
-        return
+        return model
 
     # Data need to be inferred
     data = data[~data['index'].isin(res)]
     lt = len(data)
 
-    if model_path is None:
-        model = supported_VLM[model_name]() if isinstance(model, str) else model
-    else:
-        model = supported_VLM[model_name](model_path) if isinstance(model, str) else model
+    kwargs = {}
+    if model_name is not None and (
+        'Llama-4' in model_name
+        or 'Qwen2-VL' in model_name
+        or 'Qwen2.5-VL' in model_name
+    ):
+        kwargs = {'use_vllm': use_vllm}
+
+    # (25.06.05) In newer version of transformers (after 4.50), with device_map='auto' and torchrun launcher,
+    # Transformers automatically adopt TP parallelism, which leads to compatibility problems with VLMEvalKit
+    # (In VLMEvalKit, we use torchrun to launch multiple model instances on a single node).
+    # To bypass this problem, we unset `WORLD_SIZE` before building the model to not use TP parallel.
+    ws_bak = os.environ.pop('WORLD_SIZE', None)
+    model = supported_VLM[model_name](**kwargs) if isinstance(model, str) else model
+    if ws_bak:
+        os.environ['WORLD_SIZE'] = ws_bak
     assert hasattr(model, 'chat_inner')
 
     is_api = getattr(model, 'is_api', False)
@@ -152,17 +164,19 @@ def infer_data(model, model_name, model_path, work_dir, dataset, out_file, verbo
 
 
 # A wrapper for infer_data, do the pre & post processing
-def infer_data_job_mt(model, work_dir, model_name, model_path, dataset, verbose=False, api_nproc=4, ignore_failed=False):
+def infer_data_job_mt(
+    model, work_dir, model_name, dataset, verbose=False, api_nproc=4, ignore_failed=False, use_vllm=False
+):
     rank, world_size = get_rank_and_world_size()
     dataset_name = dataset.dataset_name
-    result_file = osp.join(work_dir, f'{model_name}_{dataset_name}.tsv')
+    result_file = get_pred_file_path(work_dir, model_name, dataset_name, use_env_format=True)
 
     tmpl = osp.join(work_dir, '{}' + f'{world_size}_{dataset_name}.pkl')
     out_file = tmpl.format(rank)
 
     model = infer_data(
-        model=model, model_name=model_name, model_path=model_path, work_dir=work_dir, dataset=dataset,
-        out_file=out_file, verbose=verbose, api_nproc=api_nproc)
+        model=model, work_dir=work_dir, model_name=model_name, dataset=dataset,
+        out_file=out_file, verbose=verbose, api_nproc=api_nproc, use_vllm=use_vllm)
     if world_size > 1:
         dist.barrier()
 

@@ -1,5 +1,6 @@
 from huggingface_hub import snapshot_download
 from ..smp import *
+from ..smp.file import get_intermediate_file_path, get_file_extension
 from .video_base import VideoBaseDataset
 from .utils import build_judge, DEBUG_MESSAGE
 
@@ -48,8 +49,8 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
     TYPE = 'Video-MCQ'
 
-    def __init__(self, dataset='Video-MME', use_subtitle=False):
-        super().__init__(dataset=dataset)
+    def __init__(self, dataset='Video-MME', use_subtitle=False, nframe=0, fps=-1):
+        super().__init__(dataset=dataset, nframe=nframe, fps=fps)
         self.use_subtitle = use_subtitle
         self.dataset_name = dataset
 
@@ -140,7 +141,11 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
                 data_file.to_csv(osp.join(pth, f'{dataset_name}.tsv'), sep='\t', index=False)
 
-            dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
+            if modelscope_flag_set():
+                from modelscope import dataset_snapshot_download
+                dataset_path = dataset_snapshot_download(dataset_id=repo_id)
+            else:
+                dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
             unzip_hf_zip(dataset_path)
             generate_tsv(dataset_path)
 
@@ -148,47 +153,47 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
         return dict(data_file=data_file, root=dataset_path)
 
-    def save_video_frames(self, video, num_frames=8, fps=-1, video_llm=False):
+    def save_video_frames(self, video, video_llm=False):
 
         vid_path = osp.join(self.data_root, 'video', video + '.mp4')
+        import decord
         vid = decord.VideoReader(vid_path)
         video_info = {
             'fps': vid.get_avg_fps(),
             'n_frames': len(vid),
         }
-        if num_frames > 0 and fps < 0:
-            step_size = len(vid) / (num_frames + 1)
-            indices = [int(i * step_size) for i in range(1, num_frames + 1)]
-            frame_paths = self.frame_paths(video, num_frames)
-        elif fps > 0:
+        if self.nframe > 0 and self.fps < 0:
+            step_size = len(vid) / (self.nframe + 1)
+            indices = [int(i * step_size) for i in range(1, self.nframe + 1)]
+            frame_paths = self.frame_paths(video)
+        elif self.fps > 0:
             # not constrained by num_frames, get frames by fps
             total_duration = video_info['n_frames'] / video_info['fps']
-            required_frames = int(total_duration * fps)
-            step_size = video_info['fps'] / fps
+            required_frames = int(total_duration * self.fps)
+            step_size = video_info['fps'] / self.fps
             indices = [int(i * step_size) for i in range(required_frames)]
-            frame_paths = self.frame_paths_fps(video, len(indices), fps)
+            frame_paths = self.frame_paths_fps(video, len(indices))
 
         flag = np.all([osp.exists(p) for p in frame_paths])
 
         if not flag:
-            images = [vid[i].asnumpy() for i in indices]
-            images = [Image.fromarray(arr) for arr in images]
-            for im, pth in zip(images, frame_paths):
-                if not osp.exists(pth) and not video_llm:
-                    im.save(pth)
+            lock_path = osp.splitext(vid_path)[0] + '.lock'
+            with portalocker.Lock(lock_path, 'w', timeout=30):
+                if not np.all([osp.exists(p) for p in frame_paths]):
+                    images = [vid[i].asnumpy() for i in indices]
+                    images = [Image.fromarray(arr) for arr in images]
+                    for im, pth in zip(images, frame_paths):
+                        if not osp.exists(pth):
+                            im.save(pth)
 
         return frame_paths, indices, video_info
 
-    def save_video_into_images(self, line, num_frames=8):
-        frame_paths, indices, video_info = self.save_video_frames(line['video'], num_frames)
-        return frame_paths
-
-    def build_prompt(self, line, num_frames, video_llm, fps):
+    def build_prompt(self, line, video_llm):
         if isinstance(line, int):
             assert line < len(self)
             line = self.data.iloc[line]
 
-        frames, indices, video_info = self.save_video_frames(line['video'], num_frames, fps, video_llm)
+        frames, indices, video_info = self.save_video_frames(line['video'], video_llm)
 
         if self.use_subtitle and os.path.exists(osp.join(self.data_root, line['subtitle_path'])):
             import pysubs2
@@ -227,11 +232,11 @@ Respond with only the letter (A, B, C, or D) of the correct option.
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.videomme import get_dimension_rating, extract_characters_regex, extract_option
 
-        assert eval_file.endswith('.xlsx'), 'data file should be an xlsx file'
+        assert get_file_extension(eval_file) in ['xlsx', 'json', 'tsv'], 'data file should be an supported format (xlsx/json/tsv) file'  # noqa: E501
 
-        tmp_file = eval_file.replace('.xlsx', '_tmp.pkl')
-        tgt_file = eval_file.replace('.xlsx', '_rating.json')
-        score_file = eval_file.replace('.xlsx', '_score.xlsx')
+        tmp_file = get_intermediate_file_path(eval_file, '_tmp', 'pkl')
+        tgt_file = get_intermediate_file_path(eval_file, '_rating', 'json')
+        score_file = get_intermediate_file_path(eval_file, '_score')
 
         if not osp.exists(score_file):
             model = judge_kwargs.get('model', 'exact_matching')
@@ -264,9 +269,9 @@ Respond with only the letter (A, B, C, or D) of the correct option.
                         data.loc[data['index'] == idx].to_dict(orient='records')[0],
                         'Video-MME'
                     )
-                    data.loc[idx, 'score'] = int(extract_pred == ans)
+                    data.loc[data['index'] == idx, 'score'] = int(extract_pred == ans)
                 else:
-                    data.loc[idx, 'score'] = int(extract_characters_regex(pred) == ans)
+                    data.loc[data['index'] == idx, 'score'] = int(extract_characters_regex(pred) == ans)
 
             rejected = [x for x in data['score'] if x == -1]
 

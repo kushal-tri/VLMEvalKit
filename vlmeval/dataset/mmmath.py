@@ -1,17 +1,24 @@
 import re
 import json
-import sympy as sp
+
 import numpy as np
-from sympy import simplify, Eq, sympify, Pow, pi
-from sympy.parsing.latex import parse_latex
 import sys
 import math
 import os
 import argparse
+import timeout_decorator
+import logging
 
 from .image_base import ImageBaseDataset
 from ..utils import track_progress_rich
-from ..smp import load, dump
+from ..smp import load, dump, get_intermediate_file_path
+
+try:
+    import sympy as sp
+    from sympy import simplify, Eq, sympify, Pow, pi
+    from sympy.parsing.latex import parse_latex
+except ImportError:
+    logging.warning('sympy is not installed, please install it for MM-Math evaluation.')
 
 
 class AutoScoringJudge:
@@ -124,11 +131,15 @@ class AutoScoringJudge:
             self.precision = precision[idx]
 
             for item2 in temp_list2:
-                if self.is_equal(item1, item2):
-                    temp_list1.remove(item1)
-                    temp_list2.remove(item2)
-                    precision.remove(self.precision)
-                    break
+                try:
+                    if self.is_equal(item1, item2):
+                        temp_list1.remove(item1)
+                        temp_list2.remove(item2)
+                        precision.remove(self.precision)
+                        break
+                except Exception as err:
+                    logging.warning(f'{type(err)}: {err}')
+                    continue
             else:
                 # If no match was found, return False
                 return False
@@ -148,72 +159,7 @@ class AutoScoringJudge:
         # Replaces the symbol for pi in sympy expressions with its numerical value
         return expression_sympy.subs(self.pi, math.pi)
 
-    def is_equal(self, expression1, expression2):
-        # Default first expression is ground truth. Check if expressions are equal in different aspects
-        if expression1 == expression2 and expression1 != "" and expression2 != "":
-            # print("Equivalent natively")
-            return True
-
-        # First check if both are intervals
-        if self.is_interval(expression1) and self.is_interval(expression2):
-            try:
-                if self.interval_equal(expression1, expression2):
-                    # print("Interval equivalent")
-                    return True
-            except:
-                return False
-
-        # Then check for numerical equality
-        try:
-            if self.numerical_equal(expression1, expression2):
-                # print("Numerically equivalent")
-                return True
-        except:
-            pass
-        # Then check if expressions are mathematically equal
-        try:
-            if self.expression_equal(expression1, expression2) and not ("=" in expression1 and "=" in expression2):
-                # print("Expression equivalent")
-                return True
-        except:
-            pass
-
-        # Lastly, check for equation equality
-        try:
-            if self.equation_equal(expression1, expression2):
-                # print("Equation equivalent")
-                return True
-        except:
-            pass
-
-        return False
-
-    def numerical_equal(self, expression1: str, expression2: str, include_percentage: bool = True):
-        # Check if two numerical values are equal within an allowed error range
-        # Includes possible percentage cases
-        reference = float(expression1)
-        prediction = float(expression2)
-
-        if include_percentage:
-            gt_result = [reference / 100, reference, reference * 100]
-        else:
-            gt_result = [reference]
-
-        for item in gt_result:
-            if abs(item - prediction) <= self.precision * 1.01:
-                return True
-        return False
-
-    def expression_equal(self, exp1, exp2):
-        # Check if two expressions are mathematically equivalent
-        # Extract expression and use sympy for equivalence checking
-        def extract_expression(expression):
-            if "=" in expression:
-                expression = expression.split("=")[1]
-            return expression.strip()
-
-        exp1 = extract_expression(exp1)
-        exp2 = extract_expression(exp2)
+        exp_too_long = len(exp1) > 300 or len(exp2) > 300
 
         expr1_sym = sympify(parse_latex(exp1))
         expr2_sym = sympify(parse_latex(exp2))
@@ -232,18 +178,13 @@ class AutoScoringJudge:
                         print("These two numbers cannot be calculated by the current computer for: "
                               f"\"{str(expr1_sym)}\" and \"{str(expr2_sym)}\"")
                         return False
-                    if abs(expr1_sym.evalf() - expr2_sym.evalf()) <= self.precision * 1.01:
-                        return True
-                    else:
-                        return False
-                except:
-                    return False
+            elif exp_too_long:
+                print(f'Expression {exp1} or {exp2} is too long to compute. ')
+                return False
             else:
                 try:
                     simplified_expr = simplify(expr1_sym - expr2_sym)
-
                     num_value = simplified_expr.evalf()
-
                     return abs(num_value) < 1e-3
                 except:
                     return False
@@ -409,11 +350,11 @@ class MMMath(ImageBaseDataset):
 
         tups = [dict(expression1=x, expression2=y) for x, y in zip(data['answer'], data['prediction'])]
 
-        res = track_progress_rich(func, tups, nproc=32)
+        res = track_progress_rich(func, tups, nproc=16)
         data['hit'] = res
         dump(data, eval_file)
 
-        score_file = eval_file.replace('.xlsx', '_score.json')
+        score_file = get_intermediate_file_path(eval_file, '_score', 'json')
         score = {}
         score['overall'] = np.mean(data['hit'])
         # Results by Difficulty

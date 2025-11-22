@@ -10,39 +10,7 @@ from ..dataset import DATASET_TYPE
 class llama_vision(BaseModel):
 
     INSTALL_REQ = False
-    INTERLEAVE = False
-
-    # This function is used to split Llama-3.2-90B
-    def split_model(self):
-        import math
-        device_map = {}
-        num_gpus = torch.cuda.device_count()
-        rank, world_size = get_rank_and_world_size()
-        num_gpus = num_gpus // world_size
-
-        num_layers = 100
-        # GPU0: -5, GPU-1: -7
-        total_cost = num_layers + 5 + 7
-
-        # Since the first GPU will be used for ViT, treat it as 0.8 GPU.
-        num_layers_per_gpu = total_cost // num_gpus
-        num_layers_per_gpu = [num_layers_per_gpu] * num_gpus
-        num_layers_per_gpu[0] -= 5
-        num_layers_per_gpu[-1] -= 7
-
-        layer_cnt = 0
-        for i, num_layer in enumerate(num_layers_per_gpu):
-            for j in range(num_layer):
-                device_map[f'language_model.model.layers.{layer_cnt}'] = rank + world_size * i
-                layer_cnt += 1
-
-        device_map['vision_model'] = rank
-        device_map['language_model.model.embed_tokens'] = rank
-        device_map['language_model.model.rotary_emb'] = rank
-        device_map['language_model.model.norm'] = rank + world_size * (num_gpus - 1)
-        device_map['language_model.lm_head'] = rank + world_size * (num_gpus - 1)
-        device_map['multi_modal_projector'] = rank + world_size * (num_gpus - 1)
-        return device_map
+    INTERLEAVE = True
 
     def __init__(self, model_path='meta-llama/Llama-3.2-11B-Vision-Instruct', **kwargs):
         try:
@@ -51,36 +19,18 @@ class llama_vision(BaseModel):
             logging.critical('Please install transformers>=4.45.0 before using llama_vision.')
             raise e
 
-        rank, world_size = get_rank_and_world_size()
-
-        if '11b' in model_path.lower() and auto_split_flag():
-            assert world_size == 1, 'We only support world_size == 1 when AUTO_SPLIT is set for Llama-3.2-11B'
-            logging.warning('Currently, we only support to split the 11B model across all GPUs.')
-            self.model = MllamaForConditionalGeneration.from_pretrained(
-                model_path,
-                torch_dtype=torch.bfloat16,
-                device_map='auto',
-            ).eval()
-        elif '90b' in model_path.lower():
-            device_map = self.split_model()
-            self.model = MllamaForConditionalGeneration.from_pretrained(
-                model_path,
-                torch_dtype=torch.bfloat16,
-                device_map=device_map,
-            ).eval()
-        else:
-            self.model = MllamaForConditionalGeneration.from_pretrained(
-                model_path,
-                torch_dtype=torch.bfloat16,
-                device_map='cpu',
-            ).cuda().eval()
+        self.model = MllamaForConditionalGeneration.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        ).eval()
 
         self.device = 'cuda'
         self.processor = AutoProcessor.from_pretrained(model_path)
-        if 'Instruct' in model_path:
+        if 'Instruct' in model_path or 'cot' in model_path or 'CoT' in model_path:
             kwargs_default = dict(do_sample=True, temperature=0.6, top_p=0.9)
         else:
-            kwargs_default = dict(do_sample=False, max_new_tokens=512, temperature=0.0, top_p=None, num_beams=1)
+            kwargs_default = dict(do_sample=False, max_new_tokens=2048, temperature=0.0, top_p=None, num_beams=1)
         kwargs.update(kwargs_default)
         print(f'Following kwargs received: {kwargs}, will use as generation config. ')
         self.kwargs = kwargs
@@ -129,7 +79,7 @@ class llama_vision(BaseModel):
                 f'Question: {question} Options: {options} Indicate the correct answer at the end.'
             )
             for i in range(len(tgt_path)):
-                prompt = prompt.replace(f'<image {i+1}>', '')
+                prompt = prompt.replace(f'<image {i + 1}>', '')
         elif listinstr(['MathVista'], dataset):
             self.kwargs['max_new_tokens'] = 2048
             prompt = f'{question}'
@@ -182,21 +132,22 @@ class llama_vision(BaseModel):
         return message
 
     def generate_inner(self, message, dataset=None):
-        prompt, image_path = self.message_to_promptimg(message, dataset=dataset)
-
-        image = Image.open(image_path)
-        messages = [
-            {'role': 'user', 'content': [
-                {'type': 'image'},
-                {'type': 'text', 'text': prompt}
-            ]}
-        ]
+        payload, images = [], []
+        for msg in message:
+            if msg['type'] == 'text':
+                payload.append({'type': 'text', 'text': msg['value']})
+            else:
+                payload.append({'type': 'image'})
+                images.append(Image.open(msg['value']))
+        messages = [{'role': 'user', 'content': payload}]
         input_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-        inputs = self.processor(image, input_text, return_tensors='pt').to(self.device)
+        inputs = self.processor(images, input_text, return_tensors='pt').to(self.device)
         if not self.use_custom_prompt(dataset):
-            if DATASET_TYPE(dataset) == 'MCQ' or DATASET_TYPE(dataset) == 'Y/N':
+            if dataset is not None and DATASET_TYPE(dataset) in ['MCQ', 'Y/N']:
                 self.kwargs['max_new_tokens'] = 128
             else:
                 self.kwargs['max_new_tokens'] = 512
+        if "cot" in self.model_name or "CoT" in self.model_name:
+            self.kwargs['max_new_tokens'] = 2048
         output = self.model.generate(**inputs, **self.kwargs)
         return self.processor.decode(output[0][inputs['input_ids'].shape[1]:]).replace('<|eot_id|>', '')

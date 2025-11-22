@@ -30,7 +30,7 @@ class Cambrian(BaseModel):
             model_path,
             None,
             model_name,
-            device_map=None
+            device_map="cuda"
         )
 
         if '8b' in model_path:
@@ -47,7 +47,7 @@ class Cambrian(BaseModel):
 
         self.tokenizer = tokenizer
         self.image_processor = image_processor
-        self.model = model.to('cuda')
+        self.model = model
 
     def process(self, image, question):
         if self.model_config.mm_use_im_start_end:
@@ -77,7 +77,7 @@ class Cambrian(BaseModel):
                 do_sample=False,
                 temperature=0,
                 num_beams=1,
-                max_new_tokens=512,
+                max_new_tokens=2048,
                 use_cache=True
             )
         outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
