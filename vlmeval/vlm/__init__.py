@@ -116,3 +116,5 @@ from .logics import Logics_Thinking
 from .cosmos import Cosmos
 from .liquid import LFM2VL
 from .insight_v import InsightV
+from .lbm1 import LBM1
+from .paligemma2 import PaliGemma2

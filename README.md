@@ -1,5 +1,6 @@
 ![LOGO](http://opencompass.openxlab.space/utils/MMLB.jpg)
 
+
 <b>A Toolkit for Evaluating Large Vision-Language Models. </b>
 
 [![][github-contributors-shield]][github-contributors-link] • [![][github-forks-shield]][github-forks-link] • [![][github-stars-shield]][github-stars-link] • [![][github-issues-shield]][github-issues-link] • [![][github-license-shield]][github-license-link]
@@ -22,6 +23,36 @@ English | [简体中文](/docs/zh-CN/README_zh-CN.md) | [日本語](/docs/ja/REA
 </div>
 
 **VLMEvalKit** (the python package name is **vlmeval**) is an **open-source evaluation toolkit** of **large vision-language models (LVLMs)**. It enables **one-command evaluation** of LVLMs on various benchmarks, without the heavy workload of data preparation under multiple repositories. In VLMEvalKit, we adopt **generation-based evaluation** for all LVLMs, and provide the evaluation results obtained with both **exact matching** and **LLM-based answer extraction**.
+
+## Evaluating LBM1 VLM using VLMEvalKit. 
+The code to load LBM1 model and run eval is in `vlmeval/vlm/lbm1.py`. 
+
+### Installation
+1. Define LBM_HOME pointing to LBM directory.
+2. Create a new virtualenv and install the dependencies for both the LBM and VLMEvalKit. 
+```
+$ python -m venv ${HOME}/envs/lbm_vlm_eval;
+$ source ${HOME}/envs/lbm_vlm_eval;
+$ pip install -e .;
+$ cd $LBM_HOME; pip install -r setup/venv/requirements-310.txt; # Assumes python 3.10, for 3.12 install requirements-312.txt
+```
+
+### Defining Config. 
+The config to run the VLMEval is in `configs/lbm1.yaml`
+Specify datasets to ealuate in `data` field and location of the checkpoint in `model`. You can also overwrite the checkpoint by defining the environment variable: `LBM_CHECKPOINT_PATH`. 
+
+### Running the eval. 
+To run the single GPU eval, run
+```
+python run.py --config configs/lbm1.yaml
+```
+
+To run on 8 GPUs, use torchrun.
+```
+torchrun --nproc-per-node=8 run.py --config configs/lbm1.yaml
+```
+
+
 
 ## Recent Codebase Changes
 - **[2025-09-12]** **Major Update: Improved Handling for Models with Thinking Mode**

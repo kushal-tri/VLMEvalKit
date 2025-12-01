@@ -1,0 +1,14 @@
+{
+  "model": {
+    "LBM1": {
+      "class": "LBM1",
+      "checkpoint_path": "s3://robotics-manip-lbm-us-west-2/sagemaker_outputs/fanqilin-lbm/fanqilin-lbm-training-2025-09-06-23-55-16/epoch_0-step_200000/checkpoint.ckpt"
+    }
+  },
+  "data": {
+    "MMBench_DEV_EN_V11": {
+      "class": "ImageMCQDataset",
+      "dataset": "MMBench_DEV_EN_V11"
+    }
+  }
+}
