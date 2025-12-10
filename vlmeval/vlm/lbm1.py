@@ -76,6 +76,8 @@ def deferred_imports():
 class LBM1(BaseModel):
     def __init__(self, checkpoint_path=None, **kwargs):
         super().__init__(**kwargs)
+        workspace_cls = deferred_imports().TrainDiffusionLightningWorkspace
+
         lbm_home = os.environ.get("LBM_HOME", None)
         assert lbm_home is not None, "You must set the LBM_HOME environment variable to the path of the LBM diffusion-policy codebase."
         if lbm_home not in sys.path:
@@ -114,7 +116,6 @@ class LBM1(BaseModel):
 
         checkpoint_file = maybe_download_from_s3(checkpoint_path)
 
-        workspace_cls = deferred_imports().TrainDiffusionLightningWorkspace
         workspace = workspace_cls.create_from_checkpoint(
             checkpoint_path=resolve_path(checkpoint_file),
             output_dir="/tmp",  # Required argument, unimportant for inference.
