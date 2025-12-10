@@ -2,6 +2,7 @@ from PIL import Image
 import torch
 from transformers import AutoProcessor
 
+
 from .base import BaseModel
 from ..smp import *
 
@@ -11,8 +12,6 @@ from io import BytesIO
 import base64
 from mimetypes import guess_type
 from types import SimpleNamespace
-
-
 
 def deferred_imports():
     # TODO(imcmahon): Remove these deferred imports. This was only useful
@@ -26,17 +25,6 @@ def deferred_imports():
 
     # Transitively imported later; fail-fast here.
     import transformers  # noqa: F401
-
-    from diffusion_policy.aws.s3_util import (
-        get_aws_region_from_s3_path,
-        is_s3_path,
-        list_s3_files_with_boto3,
-        maybe_download_from_s3,
-    )
-
-    from diffusion_policy.common.path_util import resolve_path
-
-    from diffusion_policy.model.vision.paligemma.paligemma import PaliGemmaModel
 
     import diffusion_policy.common.gdown_and_cache_dir_mods  # noqa: F401
     from diffusion_policy.common.pose_util import pose9d_to_mat
@@ -76,12 +64,21 @@ def deferred_imports():
 class LBM1(BaseModel):
     def __init__(self, checkpoint_path=None, **kwargs):
         super().__init__(**kwargs)
-        workspace_cls = deferred_imports().TrainDiffusionLightningWorkspace
-
         lbm_home = os.environ.get("LBM_HOME", None)
         assert lbm_home is not None, "You must set the LBM_HOME environment variable to the path of the LBM diffusion-policy codebase."
         if lbm_home not in sys.path:
             sys.path.insert(0, lbm_home)
+
+
+        from diffusion_policy.aws.s3_util import (
+            get_aws_region_from_s3_path,
+            is_s3_path,
+            list_s3_files_with_boto3,
+            maybe_download_from_s3,
+        )
+
+        from diffusion_policy.common.path_util import resolve_path
+        from diffusion_policy.model.vision.paligemma.paligemma2 import PaliGemma2Model
 
         # Check if checkpoint_path is specified; if not, fall back to env variable.
         lbm_ckpt_env = os.environ.get("LBM_CHECKPOINT_PATH", None)
@@ -116,6 +113,7 @@ class LBM1(BaseModel):
 
         checkpoint_file = maybe_download_from_s3(checkpoint_path)
 
+        workspace_cls = deferred_imports().TrainDiffusionLightningWorkspace
         workspace = workspace_cls.create_from_checkpoint(
             checkpoint_path=resolve_path(checkpoint_file),
             output_dir="/tmp",  # Required argument, unimportant for inference.
