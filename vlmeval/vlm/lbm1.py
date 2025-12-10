@@ -144,6 +144,6 @@ class LBM1(BaseModel):
             del model_inputs['attention_mask']
             with torch.inference_mode():
                 generation = self.model.generate(**model_inputs, kv_cache=([], []))
-                res = self.processor.decode(generation, skip_special_tokens=True)
+                res = self.processor.decode(generation[0], skip_special_tokens=True)
 
         return res

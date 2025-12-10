@@ -50,6 +50,6 @@ class PaliGemma2(BaseModel):
             model_inputs['prefix_masks'] = model_inputs['attention_mask'].cuda()
             del model_inputs['attention_mask']
             with torch.inference_mode():
-                generation = self.model.generate(**model_inputs, kv_cache=([], []), do_sample=False)
+                generation = self.model.generate(**model_inputs, kv_cache=([], []))
                 res = self.processor.decode(generation[0], skip_special_tokens=True)
         return res
