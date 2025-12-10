@@ -9,9 +9,9 @@
       "class": "ImageMCQDataset",
       "dataset": "RealWorldQA"
     },
-    "GQA": {
-      "class": "ImageMCQDataset",
-      "dataset": "GQA"
+    "GQA_TestDev_Balanced": {
+      "class": "ImageVQADataset",
+      "dataset": "GQA_TestDev_Balanced"
     },
     "SpatialEval": {
       "class": "ImageMCQDataset",
