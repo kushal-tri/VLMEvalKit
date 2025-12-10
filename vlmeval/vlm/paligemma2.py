@@ -52,5 +52,4 @@ class PaliGemma2(BaseModel):
             with torch.inference_mode():
                 generation = self.model.generate(**model_inputs, kv_cache=([], []), do_sample=False)
                 res = self.processor.decode(generation[0], skip_special_tokens=True)
-                print(res)
         return res
