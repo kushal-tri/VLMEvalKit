@@ -78,7 +78,6 @@ class LBM1(BaseModel):
         )
 
         from diffusion_policy.common.path_util import resolve_path
-        from diffusion_policy.model.vision.paligemma.paligemma2 import PaliGemma2Model
 
         # Check if checkpoint_path is specified; if not, fall back to env variable.
         lbm_ckpt_env = os.environ.get("LBM_CHECKPOINT_PATH", None)
@@ -136,6 +135,7 @@ class LBM1(BaseModel):
         ).to('cuda')
         input_len = model_inputs['input_ids'].shape[-1]
 
+        from diffusion_policy.model.vision.paligemma.paligemma2 import PaliGemma2Model
         if type(self.model) == PaliGemma2Model:
             model_inputs['input_ids'] = model_inputs['input_ids'][:, 256:].cuda()
             model_inputs['pixel_values'] = model_inputs['pixel_values'].cuda()
