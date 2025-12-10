@@ -2,8 +2,6 @@ from PIL import Image
 import torch
 from transformers import AutoProcessor
 
-from diffusion_policy.model.vision.paligemma.paligemma2 import PaliGemma2Model
-
 from .base import BaseModel
 from ..smp import *
 
@@ -14,14 +12,6 @@ import base64
 from mimetypes import guess_type
 from types import SimpleNamespace
 
-from diffusion_policy.aws.s3_util import (
-    get_aws_region_from_s3_path,
-    is_s3_path,
-    list_s3_files_with_boto3,
-    maybe_download_from_s3,
-)
-
-from diffusion_policy.common.path_util import resolve_path
 
 
 def deferred_imports():
@@ -36,6 +26,17 @@ def deferred_imports():
 
     # Transitively imported later; fail-fast here.
     import transformers  # noqa: F401
+
+    from diffusion_policy.aws.s3_util import (
+        get_aws_region_from_s3_path,
+        is_s3_path,
+        list_s3_files_with_boto3,
+        maybe_download_from_s3,
+    )
+
+    from diffusion_policy.common.path_util import resolve_path
+
+    from diffusion_policy.model.vision.paligemma.paligemma import PaliGemmaModel
 
     import diffusion_policy.common.gdown_and_cache_dir_mods  # noqa: F401
     from diffusion_policy.common.pose_util import pose9d_to_mat
