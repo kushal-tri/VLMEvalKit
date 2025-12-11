@@ -27,7 +27,7 @@
       "dataset": "SEEDBench_IMG"
     },
     "MME": {
-      "class": "ImageMCQDataset",
+      "class": "ImageYORNDataset",
       "dataset": "MME"
     },
     "VisuLogic": {
