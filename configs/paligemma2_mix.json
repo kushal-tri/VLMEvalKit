@@ -1,0 +1,41 @@
+{
+  "model": {
+    "paligemma2-3b-mix-224": {
+      "class": "PaliGemma"
+    }
+  },
+  "data": {
+    "RealWorldQA": {
+      "class": "ImageMCQDataset",
+      "dataset": "RealWorldQA"
+    },
+    "GQA_TestDev_Balanced": {
+      "class": "ImageVQADataset",
+      "dataset": "GQA_TestDev_Balanced"
+    },
+    "SpatialEval": {
+      "class": "ImageMCQDataset",
+      "dataset": "SpatialEval"
+    },
+    "MMBench_DEV_EN_V11": {
+      "class": "ImageMCQDataset",
+      "dataset": "MMBench_DEV_EN_V11"
+    },
+    "SEEDBench_IMG": {
+      "class": "ImageMCQDataset",
+      "dataset": "SEEDBench_IMG"
+    },
+    "MME": {
+      "class": "ImageMCQDataset",
+      "dataset": "MME"
+    },
+    "VisuLogic": {
+      "class": "ImageMCQDataset",
+      "dataset": "VisuLogic"
+    },
+    "LEGO": {
+      "class": "LEGO",
+      "dataset": "LEGO"
+    }
+  }
+}
