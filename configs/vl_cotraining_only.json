@@ -1,0 +1,42 @@
+{
+  "model": {
+    "LBM1": {
+      "class": "LBM1",
+      "checkpoint_path": "s3://robotics-manip-lbm-us-west-2/sagemaker_outputs/fanqilin-lbm/fanqilin-lbm-training-2025-09-10-17-16-46/epoch_0-step_200000/checkpoint.ckpt"
+    }
+  },
+  "data": {
+    "RealWorldQA": {
+      "class": "ImageMCQDataset",
+      "dataset": "RealWorldQA"
+    },
+    "GQA_TestDev_Balanced": {
+      "class": "ImageVQADataset",
+      "dataset": "GQA_TestDev_Balanced"
+    },
+    "SpatialEval": {
+      "class": "ImageMCQDataset",
+      "dataset": "SpatialEval"
+    },
+    "MMBench_DEV_EN_V11": {
+      "class": "ImageMCQDataset",
+      "dataset": "MMBench_DEV_EN_V11"
+    },
+    "SEEDBench_IMG": {
+      "class": "ImageMCQDataset",
+      "dataset": "SEEDBench_IMG"
+    },
+    "MME": {
+      "class": "ImageYORNDataset",
+      "dataset": "MME"
+    },
+    "VisuLogic": {
+      "class": "ImageMCQDataset",
+      "dataset": "VisuLogic"
+    },
+    "LEGO": {
+      "class": "LEGO",
+      "dataset": "LEGO"
+    }
+  }
+}
